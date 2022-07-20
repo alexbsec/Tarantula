@@ -1,4 +1,5 @@
-expr    : term ((PLUS|MINUS) term)*
+expr    : KEYWORD:head IDENTIFIER EQ expr
+        : term ((PLUS|MINUS) term)*
 
 term    : factor ((MUL|DIV) factor)*
         : factor (FACTORIAL)*
@@ -8,18 +9,19 @@ factor  : (PLUS|MINUS) factor
 
 power   : atom (POW factor)*
 
-atom    : INT|FLOAT
+atom    : INT|FLOAT|IDENTIFIER
         : LPAREN expr RPAREN
 
+(head x = 5)*5
 
 
-FUNCTIONS
+VARIABLES:
 
-define void functionName(inputs){
-    "code"
-}
+IDENTIFIER, KEYWORD, EQ
 
-define full functionName(inputs){
-    "code"
-    output something
-}
+head(global)    varname               =         <expr>
+(KEYWORD)            (IDENTIFIER)       (EQ)
+
+examples:
+head x = 2
+

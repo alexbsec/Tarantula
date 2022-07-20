@@ -364,7 +364,7 @@ class Parser:
         return self.bin_op(self.term, (TT_PLUS, TT_MINUS))
 
     def term(self):
-        return self.bin_op(self.factor, (TT_MULT, TT_DIV, TT_FACT))
+        return self.bin_op(self.factor, (TT_MULT, TT_DIV))
 
 ####################################
 # CONTEXT
@@ -481,14 +481,16 @@ class Number:
             return op_result, None
 
     def multiplied_by(self, other_):
-        op_result = Number(self.value * other_.value)
-        op_result.set_context(self.context)
-        return op_result, None
+        if isinstance(other_, Number):
+            op_result = Number(self.value * other_.value)
+            op_result.set_context(self.context)
+            return op_result, None
 
     def to_the_power_of(self, other_):
-        op_result = Number(self.value ** other_.value)
-        op_result.set_context(self.context)
-        return op_result, None
+        if isinstance(other_, Number):
+            op_result = Number(self.value ** other_.value)
+            op_result.set_context(self.context)
+            return op_result, None
 
     def divided_by(self, other_):
         if isinstance(other_, Number):

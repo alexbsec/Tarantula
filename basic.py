@@ -41,8 +41,25 @@ class InvalidSyntaxError(Error):
         super().__init__(pos_start_, pos_end_, 'InvalidSyntaxError: failed to interpret parser', details_)
 
 class RuntimeError(Error):
-    def __init__(self, pos_start_, pos_end_, details_):
+    def __init__(self, pos_start_, pos_end_, details_, context_):
         super().__init__(pos_start_, pos_end_, 'RuntimeError', details_)
+        self.context = context_
+
+    def as_string(self):
+        result = self.generate_traceback()
+        result += '\n\n' + string_with_arrows(self.pos_start.ftxt, self.pos_start, self.pos_end)
+        return result
+
+    def generate_traceback(self):
+        result = ''
+        pos = self.pos_start
+        ctxt = self.context
+
+        while ctxt:
+            result = f' File {pos.fn}, line {pos.ln + 1}, in {ctxt.display_name}\n' + result
+            pos = ctxt.parent_entry_pos
+            ctxt = ctxt.parent
+        return 'Traced to: \n' + result
 
 class RuntimeResult:
     def __init__(self):
@@ -338,28 +355,43 @@ class Parser:
         return self.bin_op(self.factor, (TT_MULT, TT_DIV))
 
 ####################################
+# CONTEXT
+####################################
+
+class Context:
+    def __init__(self, display_name_, parent=None, parent_entry_pos=None):
+        self.display_name = display_name_
+        self.parent = parent
+        self.parent_entry_pos = parent_entry_pos
+
+
+
+
+####################################
 # INTERPRETER
 ####################################
 
 class Interpreter:
-    def visit(self, node_):
+    def visit(self, node_, context_):
         method_name = f'visit_{type(node_).__name__}'
         method = getattr(self, method_name, self.no_visit_method)
         #print(type(node_))
-        return method(node_)
+        return method(node_, context_)
 
-    def no_visit_method(self, node_):
+    def no_visit_method(self, node_, context_):
         raise Exception(f'No visit_{type(node_).__name__} method defined.')
 
-    def visit_NumberNode(self, node_):
-        return RuntimeResult().success(Number(node_.token.value))
+    def visit_NumberNode(self, node_, context_):
+        number = Number(node_.token.value)
+        number.set_context(context_).set_pos(node_.pos_start, node_.pos_end)
+        return RuntimeResult().success(number)
 
-    def visit_BinOpNode(self, node_):
+    def visit_BinOpNode(self, node_, context_):
         res = RuntimeResult()
-        left = res.register(self.visit(node_.left_node))
+        left = res.register(self.visit(node_.left_node, context_))
         if res.error:
             return res
-        right = res.register(self.visit(node_.right_node))
+        right = res.register(self.visit(node_.right_node, context_))
         if res.error:
             return res
 
@@ -375,9 +407,6 @@ class Interpreter:
         elif node_.op_token.type == TT_DIV:
             result, error = left.divided_by(right)
 
-
-
-
         if error:
             return res.failure(error)
         else:
@@ -385,9 +414,9 @@ class Interpreter:
             return res.success(result)
 
 
-    def visit_UnaryOpNode(self, node_):
+    def visit_UnaryOpNode(self, node_, context_):
         res = RuntimeResult()
-        number = res.register(self.visit(node_.node))
+        number = res.register(self.visit(node_.node, context_))
         if res.error:
             return res
 
@@ -413,29 +442,43 @@ class Number:
     def __init__(self, value_):
         self.value = value_
         self.set_pos()
+        self.set_context()
 
     def set_pos(self, pos_start=None, pos_end=None):
         self.pos_start = pos_start
         self.pos_end = pos_end
+        return self
+
+    def set_context(self, context_=None):
+        self.context = context_
+        return self
+
 
     def added_to(self, other_):
         if isinstance(other_, Number):
-            return Number(self.value + other_.value), None
+            op_result = Number(self.value + other_.value)
+            op_result.set_context(self.context)
+            return op_result, None
 
     def subtracted_by(self, other_):
         if isinstance(other_, Number):
-            return Number(self.value - other_.value), None
+            op_result = Number(self.value - other_.value)
+            op_result.set_context(self.context)
+            return op_result, None
 
     def multiplied_by(self, other_):
-        if isinstance(other_, Number):
-            return Number(self.value * other_.value), None
+        op_result = Number(self.value * other_.value)
+        op_result.set_context(self.context)
+        return op_result, None
 
     def divided_by(self, other_):
         if isinstance(other_, Number):
             if other_.value == 0:
-                #print(RuntimeError(other_.pos_start, other_.pos_end, "Division by zero."))
-                return [], RuntimeError(other_.pos_start, other_.pos_end, "Division by zero. \n")
-            return Number(self.value / other_.value), None
+
+                return [], RuntimeError(other_.pos_start, other_.pos_end, "Division by zero. \n", self.context)
+            op_result = Number(self.value / other_.value)
+            op_result.set_context(self.context)
+            return op_result, None
 
     def __repr__(self):
         return str(self.value)
@@ -458,7 +501,8 @@ def run(text, fn):
         return None, ast.error
 
     interpreter = Interpreter()
-    result = interpreter.visit(ast.node)
+    context = Context('<program>')
+    result = interpreter.visit(ast.node, context)
 
 
     return result.value, result.error
